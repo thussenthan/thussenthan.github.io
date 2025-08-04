@@ -1,6 +1,6 @@
 # [thussenthan.github.io](https://thussenthan.github.io)
 
-My personal portfolio webpage (hosted on github.io).
+My personal portfolio webpage (hosted on GitHub.io Pages).
 
 **Check it out here at [https://thussenthan.github.io](https://thussenthan.github.io)!**
 
