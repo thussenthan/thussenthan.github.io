@@ -23,7 +23,7 @@
     <!--
     - custom css link
   -->
-    <link rel="stylesheet" href="./src/styles/style.css" />
+    <link rel="stylesheet" href="./src/styles/style.css?v=20260523" />
 
     <!--
     - google font/icons links
@@ -67,6 +67,9 @@
   </head>
 
   <body>
+    <canvas id="boids-bg-canvas" aria-hidden="true"></canvas>
+    <canvas id="boids-fg-canvas" aria-hidden="true"></canvas>
+
     <!--
     - #MAIN
   -->
@@ -256,6 +259,10 @@
             </li>
 
             <li class="navbar-item">
+              <button class="navbar-link" data-nav-link>Game</button>
+            </li>
+
+            <li class="navbar-item">
               <button class="navbar-link" data-nav-link>Contact</button>
             </li>
           </ul>
@@ -268,431 +275,6 @@
         <article class="about active" data-page="about">
           <section class="hero-section">
             <canvas id="hero-canvas" aria-hidden="true"></canvas>
-            <link rel="stylesheet" href="./Ramp Labs_files/fonts.css" />
-            <script>
-              (function () {
-                const canvas = document.getElementById("hero-canvas");
-                const ctx = canvas.getContext("2d");
-                let W, H, dpr;
-
-                const word = "thussenthan";
-                let cellH, charW, fontSize, cols, rows, gridW, gridH;
-                let textRows = [];
-
-                let buf1, buf2, smoothBuf;
-                const damping = 0.963;
-
-                let prevGx = -1,
-                  prevGy = -1,
-                  prevMx = -1,
-                  prevMy = -1,
-                  prevTime = 0;
-                let dropletGx = -1,
-                  dropletGy = -1;
-                let isMouseDown = false;
-
-                function resize() {
-                  dpr = Math.min(devicePixelRatio || 1, 2);
-                  W = canvas.offsetWidth;
-                  H = canvas.offsetHeight;
-                  canvas.width = W * dpr;
-                  canvas.height = H * dpr;
-                  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-                  // probe at fixed size to measure the font's natural advance width
-                  const probeSize = 13;
-                  ctx.font = `400 ${probeSize}px TWKLausanne, Poppins, sans-serif`;
-                  const avgW = ctx.measureText("thussenthan").width / 11;
-                  // cell = measured advance width + 6% breathing room; square grid
-                  charW = Math.ceil(avgW * 1.06);
-                  cellH = charW;
-                  fontSize = probeSize;
-                  ctx.font = `400 ${fontSize}px TWKLausanne, Poppins, sans-serif`;
-
-                  cols = Math.ceil(W / charW) + 2;
-                  rows = Math.ceil(H / cellH) + 2;
-                  gridW = cols;
-                  gridH = rows;
-
-                  textRows = [];
-                  for (let r = 0; r < rows; r++) {
-                    let line = "";
-                    while (line.length < cols) line += word;
-                    textRows.push(line.substring(0, cols));
-                  }
-
-                  buf1 = new Float32Array(gridW * gridH);
-                  buf2 = new Float32Array(gridW * gridH);
-                  smoothBuf = new Float32Array(gridW * gridH);
-                }
-
-                function drop(cx, cy, radius, strength) {
-                  const r2 = radius * radius;
-                  const x0 = Math.max(0, cx - radius);
-                  const x1 = Math.min(gridW, cx + radius);
-                  const y0 = Math.max(0, cy - radius);
-                  const y1 = Math.min(gridH, cy + radius);
-                  for (let y = y0; y < y1; y++) {
-                    for (let x = x0; x < x1; x++) {
-                      const dx = x - cx,
-                        dy = y - cy;
-                      const d2 = dx * dx + dy * dy;
-                      if (d2 < r2) {
-                        buf1[y * gridW + x] += strength * (1 - d2 / r2);
-                      }
-                    }
-                  }
-                }
-
-                function dropRing(cx, cy, radius, strength) {
-                  const r2 = radius * radius;
-                  const x0 = Math.max(0, cx - radius);
-                  const x1 = Math.min(gridW, cx + radius);
-                  const y0 = Math.max(0, cy - radius);
-                  const y1 = Math.min(gridH, cy + radius);
-                  // narrow Gaussian ring peaking at ~70% of radius; dark crater at center
-                  const peak = 0.49; // (0.7)^2
-                  const sigma2 = 0.018;
-                  for (let y = y0; y < y1; y++) {
-                    for (let x = x0; x < x1; x++) {
-                      const dx = x - cx,
-                        dy = y - cy;
-                      const d2 = dx * dx + dy * dy;
-                      if (d2 < r2) {
-                        const t = d2 / r2;
-                        const dt = t - peak;
-                        buf1[y * gridW + x] +=
-                          strength * Math.exp((-dt * dt) / sigma2);
-                      }
-                    }
-                  }
-                }
-
-                function stepWater() {
-                  // reflective boundaries (Neumann) — waves bounce off walls
-                  for (let x = 0; x < gridW; x++) {
-                    buf1[x] = buf1[gridW + x];
-                    buf1[(gridH - 1) * gridW + x] =
-                      buf1[(gridH - 2) * gridW + x];
-                  }
-                  for (let y = 0; y < gridH; y++) {
-                    buf1[y * gridW] = buf1[y * gridW + 1];
-                    buf1[y * gridW + gridW - 1] = buf1[y * gridW + gridW - 2];
-                  }
-                  for (let y = 1; y < gridH - 1; y++) {
-                    for (let x = 1; x < gridW - 1; x++) {
-                      const i = y * gridW + x;
-                      buf2[i] =
-                        (buf1[i - 1] +
-                          buf1[i + 1] +
-                          buf1[i - gridW] +
-                          buf1[i + gridW]) *
-                          0.28 -
-                        buf2[i];
-                      buf2[i] *= damping;
-                    }
-                  }
-                  const tmp = buf1;
-                  buf1 = buf2;
-                  buf2 = tmp;
-                }
-
-                function frame() {
-                  stepWater();
-                  ctx.clearRect(0, 0, W, H);
-                  ctx.font = `400 ${fontSize}px TWKLausanne, Poppins, sans-serif`;
-                  ctx.textBaseline = "top";
-                  ctx.textAlign = "center";
-
-                  for (let r = 0; r < rows; r++) {
-                    const line = textRows[r];
-                    const py = r * cellH;
-                    for (let c = 0; c < line.length; c++) {
-                      const i = r * gridW + c;
-                      smoothBuf[i] =
-                        smoothBuf[i] * 0.73 + Math.abs(buf1[i]) * 0.27;
-                      const s = smoothBuf[i] * 4.5;
-                      let brightness = s / (1 + s); // Reinhard: bright but never clips, texture preserved
-
-                      // falling droplet glow
-                      if (dropletGx >= 0) {
-                        const dx = c - dropletGx,
-                          dy = r - dropletGy;
-                        const d2 = dx * dx + dy * dy;
-                        if (d2 < 5)
-                          brightness = Math.max(
-                            brightness,
-                            (1 - d2 / 5) ** 2 * 0.95,
-                          );
-                      }
-
-                      if (brightness < 0.015) continue;
-                      ctx.fillStyle = `rgba(255,255,255,${brightness.toFixed(3)})`;
-                      ctx.fillText(line[c], c * charW + charW * 0.5, py);
-                    }
-                  }
-
-                  requestAnimationFrame(frame);
-                }
-
-                function runIntroDroplet() {
-                  const duration = 1500;
-                  const cx = Math.floor(gridW / 2);
-                  const targetY = Math.floor(gridH / 2);
-                  const start = performance.now();
-                  let lastCy = -1;
-
-                  function fallFrame(now) {
-                    const t = Math.min((now - start) / duration, 1);
-                    const eased = t * t * t;
-                    const cy = Math.round(eased * targetY);
-
-                    dropletGx = cx;
-                    dropletGy = cy;
-
-                    // tiny single-cell wake so the water reacts as it falls
-                    if (cy !== lastCy && cy > 0 && cy < gridH) {
-                      buf1[cy * gridW + cx] += 0.1;
-                      lastCy = cy;
-                    }
-
-                    if (t < 1) {
-                      requestAnimationFrame(fallFrame);
-                    } else {
-                      dropletGx = -1;
-                      dropletGy = -1;
-                      // crown radius capped so the circle fits within the canvas
-                      const maxR = Math.floor(
-                        Math.min(cx, targetY, gridW - cx, gridH - targetY) *
-                          0.88,
-                      );
-                      const crownR = Math.max(8, maxR);
-                      const nPts = 22;
-                      for (let i = 0; i < nPts; i++) {
-                        const a =
-                          (i / nPts) * Math.PI * 2 +
-                          (Math.random() - 0.5) * 0.25;
-                        const px = Math.round(cx + Math.cos(a) * crownR);
-                        const py = Math.round(targetY + Math.sin(a) * crownR);
-                        drop(px, py, 3, 5.5 + Math.random() * 0.8);
-                      }
-                      drop(cx, targetY, 2, 5.0);
-                      // rebound ring
-                      const reboundR = Math.floor(crownR * 0.38);
-                      setTimeout(() => {
-                        for (let i = 0; i < 12; i++) {
-                          const a = (i / 12) * Math.PI * 2;
-                          const px = Math.round(cx + Math.cos(a) * reboundR);
-                          const py = Math.round(
-                            targetY + Math.sin(a) * reboundR,
-                          );
-                          drop(px, py, 1, 1.8);
-                        }
-                      }, 140);
-                    }
-                  }
-                  requestAnimationFrame(fallFrame);
-                }
-
-                canvas.addEventListener("mousemove", (e) => {
-                  const rect = canvas.getBoundingClientRect();
-                  const mx = e.clientX - rect.left;
-                  const my = e.clientY - rect.top;
-                  const now = performance.now();
-                  const gx = Math.floor(mx / charW);
-                  const gy = Math.floor(my / cellH);
-
-                  if (prevGx >= 0) {
-                    const dx = mx - prevMx,
-                      dy = my - prevMy;
-                    const dt = Math.max(now - prevTime, 1);
-                    const speed = Math.min(
-                      (Math.sqrt(dx * dx + dy * dy) / dt) * 8,
-                      1,
-                    );
-                    const base = isMouseDown ? 0.45 : 0.2;
-                    const scale = isMouseDown ? 0.55 : 0.35;
-                    const strength = base + speed * scale;
-                    const radius = isMouseDown ? 2 : 1;
-                    const dist = Math.sqrt(
-                      (gx - prevGx) ** 2 + (gy - prevGy) ** 2,
-                    );
-                    const steps = Math.max(1, Math.ceil(dist / 1.5));
-                    for (let i = 0; i <= steps; i++) {
-                      const ix = Math.round(
-                        prevGx + ((gx - prevGx) * i) / steps,
-                      );
-                      const iy = Math.round(
-                        prevGy + ((gy - prevGy) * i) / steps,
-                      );
-                      drop(ix, iy, radius, strength);
-                    }
-                  } else {
-                    drop(gx, gy, 1, 0.2);
-                  }
-
-                  prevGx = gx;
-                  prevGy = gy;
-                  prevMx = mx;
-                  prevMy = my;
-                  prevTime = now;
-                });
-
-                canvas.addEventListener("mousedown", (e) => {
-                  isMouseDown = true;
-                  const rect = canvas.getBoundingClientRect();
-                  const gx = Math.floor((e.clientX - rect.left) / charW);
-                  const gy = Math.floor((e.clientY - rect.top) / cellH);
-
-                  // water crown: ring of independent drops with slight randomness each click
-                  const n = 10 + Math.floor(Math.random() * 4);
-                  const crownR = 4 + Math.random() * 2.5;
-                  for (let i = 0; i < n; i++) {
-                    const a =
-                      (i / n) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
-                    const cx = Math.round(gx + Math.cos(a) * crownR);
-                    const cy = Math.round(gy + Math.sin(a) * crownR);
-                    drop(
-                      cx,
-                      cy,
-                      1 + Math.round(Math.random()),
-                      1.6 + Math.random() * 0.9,
-                    );
-                  }
-                  // central impact — staggered so crown lands first
-                  setTimeout(
-                    () => drop(gx, gy, 1, 1.8 + Math.random() * 0.6),
-                    35,
-                  );
-                });
-
-                canvas.addEventListener("mouseup", () => {
-                  isMouseDown = false;
-                });
-                canvas.addEventListener("mouseleave", () => {
-                  prevGx = -1;
-                  prevGy = -1;
-                  isMouseDown = false;
-                });
-
-                canvas.addEventListener(
-                  "touchstart",
-                  (e) => {
-                    e.preventDefault();
-                    const t = e.touches[0];
-                    const rect = canvas.getBoundingClientRect();
-                    const mx = t.clientX - rect.left,
-                      my = t.clientY - rect.top;
-                    const gx = Math.floor(mx / charW),
-                      gy = Math.floor(my / cellH);
-                    isMouseDown = true;
-                    const n = 10 + Math.floor(Math.random() * 4);
-                    const crownR = 4 + Math.random() * 2.5;
-                    for (let i = 0; i < n; i++) {
-                      const a =
-                        (i / n) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
-                      const cx = Math.round(gx + Math.cos(a) * crownR);
-                      const cy = Math.round(gy + Math.sin(a) * crownR);
-                      drop(
-                        cx,
-                        cy,
-                        1 + Math.round(Math.random()),
-                        1.6 + Math.random() * 0.9,
-                      );
-                    }
-                    setTimeout(
-                      () => drop(gx, gy, 1, 1.8 + Math.random() * 0.6),
-                      35,
-                    );
-                    prevGx = gx;
-                    prevGy = gy;
-                    prevMx = mx;
-                    prevMy = my;
-                    prevTime = performance.now();
-                  },
-                  { passive: false },
-                );
-
-                canvas.addEventListener(
-                  "touchmove",
-                  (e) => {
-                    e.preventDefault();
-                    const t = e.touches[0];
-                    const rect = canvas.getBoundingClientRect();
-                    const mx = t.clientX - rect.left,
-                      my = t.clientY - rect.top;
-                    const now = performance.now();
-                    const gx = Math.floor(mx / charW),
-                      gy = Math.floor(my / cellH);
-                    if (prevGx >= 0) {
-                      const dx = mx - prevMx,
-                        dy = my - prevMy;
-                      const dt = Math.max(now - prevTime, 1);
-                      const speed = Math.min(
-                        (Math.sqrt(dx * dx + dy * dy) / dt) * 8,
-                        1,
-                      );
-                      const strength = 0.45 + speed * 0.55;
-                      const dist = Math.sqrt(
-                        (gx - prevGx) ** 2 + (gy - prevGy) ** 2,
-                      );
-                      const steps = Math.max(1, Math.ceil(dist / 1.5));
-                      for (let i = 0; i <= steps; i++) {
-                        drop(
-                          Math.round(prevGx + ((gx - prevGx) * i) / steps),
-                          Math.round(prevGy + ((gy - prevGy) * i) / steps),
-                          2,
-                          strength,
-                        );
-                      }
-                    }
-                    prevGx = gx;
-                    prevGy = gy;
-                    prevMx = mx;
-                    prevMy = my;
-                    prevTime = now;
-                  },
-                  { passive: false },
-                );
-
-                canvas.addEventListener("touchend", () => {
-                  isMouseDown = false;
-                  prevGx = -1;
-                  prevGy = -1;
-                });
-
-                let rT;
-                window.addEventListener("resize", () => {
-                  clearTimeout(rT);
-                  rT = setTimeout(resize, 150);
-                });
-
-                function scheduleIdleDrop() {
-                  const delay = 2500 + Math.random() * 4000;
-                  setTimeout(() => {
-                    if (gridW > 0 && gridH > 0) {
-                      const gx = 2 + Math.floor(Math.random() * (gridW - 4));
-                      const gy = 2 + Math.floor(Math.random() * (gridH - 4));
-                      drop(gx, gy, 2, 0.25 + Math.random() * 0.3);
-                    }
-                    scheduleIdleDrop();
-                  }, delay);
-                }
-
-                function init() {
-                  resize();
-                  frame();
-                  setTimeout(runIntroDroplet, 200);
-                  setTimeout(scheduleIdleDrop, 6000);
-                }
-
-                if (document.fonts) {
-                  document.fonts.ready.then(init);
-                } else {
-                  setTimeout(init, 200);
-                }
-              })();
-            </script>
           </section>
 
           <header>
@@ -721,10 +303,12 @@
             </p>
 
             <p>
-              <svg class="goals-icon" role="img" aria-label="Goal icon">
-                <use href="#icon-goal"></use>
-              </svg>
-              <strong class="goals-heading">My Goals:</strong>
+              <strong class="goals-heading"
+                ><svg class="goals-icon" role="img" aria-label="Goal icon">
+                  <use href="#icon-goal"></use>
+                </svg>
+                My Goals:</strong
+              >
               I am passionate about applying machine learning to accelerate
               genomics research. In Fall 2025, I plan to matriculate into
               medical school to translate these computational insights into
@@ -1063,328 +647,6 @@
               </div>
             </div>
           </div>
-
-          <script type="module">
-            import createGlobe from "https://cdn.jsdelivr.net/npm/cobe@2/+esm";
-
-            const CMB = [6.8521, 79.8612];
-            const SIN = [1.3644, 103.9915];
-            const SFO = [37.6213, -122.379];
-            const ICN = [37.4602, 126.4407];
-            const HKG = [22.308, 113.9185];
-            const LHR = [51.4775, -0.4614];
-            const MDT = [40.1935, -76.7634];
-            const JFK = [40.6413, -73.7781];
-            const IAD = [38.9531, -77.4565];
-            const IST = [41.2753, 28.7519];
-            const MLE = [4.1918, 73.529];
-            const EWR = [40.6895, -74.1745];
-            const MUC = [48.3538, 11.7861];
-            const DOH = [25.2608, 51.6138];
-            const BOS = [42.3656, -71.0096];
-            const BNA = [36.1245, -86.6782];
-            const PHL = [39.8721, -75.2411];
-            const ORD = [41.9742, -87.9073];
-            const DCA = [38.8512, -77.0402];
-            const DXB = [25.2532, 55.3657];
-            const YYZ = [43.6777, -79.6248];
-            const YYC = [51.1215, -114.0076];
-            const SEA = [47.4502, -122.3088];
-
-            let phi = 0;
-            let theta = 0.3;
-            let isResetting = false;
-            let resetTimer;
-            let globe;
-            let rafId;
-            const canvas = document.getElementById("cobe");
-            const dpr = window.devicePixelRatio || 2;
-
-            let isDragging = false;
-            let lastX, lastY;
-            let velocityPhi = 0;
-            let velocityTheta = 0;
-            const friction = 0.95;
-
-            function initGlobe() {
-              if (rafId) cancelAnimationFrame(rafId);
-              if (globe) globe.destroy();
-              const rect = canvas.getBoundingClientRect();
-              const w = rect.width || canvas.offsetWidth || 400;
-              const h = rect.height || w;
-              globe = createGlobe(canvas, {
-                devicePixelRatio: dpr,
-                width: w,
-                height: h,
-                phi: phi,
-                theta: theta,
-                dark: 1,
-                diffuse: 1.6,
-                scale: 1,
-                mapSamples: 16000,
-                mapBrightness: 6,
-                baseColor: [0.8, 0.8, 0.8],
-                markerColor: [1, 0.8588235294, 0.4392156863],
-                glowColor: [0.5, 0.5, 0.5],
-                offset: [0, 0],
-                opacity: 0.9,
-                markers: [
-                  { location: [9.6615, 80.0255], size: 0.03, id: "jaffna" },
-                  { location: [40.2454, -76.8961], size: 0.03, id: "lemoyne" },
-                  { location: [37.5485, -121.9886], size: 0.03, id: "fremont" },
-                  {
-                    location: [40.3573, -74.6672],
-                    size: 0.03,
-                    id: "princeton",
-                  },
-                  { location: [42.3601, -71.0589], size: 0.03, id: "boston" },
-                ],
-                arcs: [
-                  // color encodes undirected route frequency: dim=1x, mid=2x, bright=3x
-                  { from: CMB, to: SIN, color: [0.4, 0.34, 0.17] },
-                  { from: SIN, to: SFO, color: [0.4, 0.34, 0.17] },
-                  { from: SFO, to: ICN, color: [0.4, 0.34, 0.17] },
-                  { from: ICN, to: HKG, color: [0.4, 0.34, 0.17] },
-                  { from: HKG, to: CMB, color: [0.4, 0.34, 0.17] },
-                  { from: CMB, to: LHR, color: [1.2, 1.03, 0.52] },
-                  { from: LHR, to: MDT, color: [0.4, 0.34, 0.17] },
-                  { from: JFK, to: LHR, color: [0.8, 0.69, 0.35] },
-                  { from: LHR, to: CMB, color: [1.2, 1.03, 0.52] },
-                  { from: CMB, to: LHR, color: [1.2, 1.03, 0.52] },
-                  { from: LHR, to: JFK, color: [0.8, 0.69, 0.35] },
-                  { from: IAD, to: IST, color: [0.8, 0.69, 0.35] },
-                  { from: IST, to: MLE, color: [0.8, 0.69, 0.35] },
-                  { from: MLE, to: CMB, color: [0.8, 0.69, 0.35] },
-                  { from: CMB, to: MLE, color: [0.8, 0.69, 0.35] },
-                  { from: MLE, to: IST, color: [0.8, 0.69, 0.35] },
-                  { from: IST, to: IAD, color: [0.8, 0.69, 0.35] },
-                  { from: EWR, to: LHR, color: [0.4, 0.34, 0.17] },
-                  { from: LHR, to: MUC, color: [0.4, 0.34, 0.17] },
-                  { from: MUC, to: EWR, color: [0.4, 0.34, 0.17] },
-                  { from: IAD, to: DOH, color: [0.8, 0.69, 0.35] },
-                  { from: DOH, to: CMB, color: [0.8, 0.69, 0.35] },
-                  { from: CMB, to: DOH, color: [0.8, 0.69, 0.35] },
-                  { from: DOH, to: IAD, color: [0.8, 0.69, 0.35] },
-                  { from: BOS, to: BNA, color: [0.8, 0.69, 0.35] },
-                  { from: BNA, to: BOS, color: [0.8, 0.69, 0.35] },
-                  { from: BOS, to: PHL, color: [0.8, 0.69, 0.35] },
-                  { from: PHL, to: BOS, color: [0.8, 0.69, 0.35] },
-                  { from: MDT, to: ORD, color: [1.2, 1.03, 0.52] },
-                  { from: ORD, to: SEA, color: [0.8, 0.69, 0.35] },
-                  { from: SEA, to: ORD, color: [0.8, 0.69, 0.35] },
-                  { from: ORD, to: MDT, color: [1.2, 1.03, 0.52] },
-                  { from: DCA, to: EWR, color: [0.8, 0.69, 0.35] },
-                  { from: EWR, to: DXB, color: [0.8, 0.69, 0.35] },
-                  { from: DXB, to: CMB, color: [0.8, 0.69, 0.35] },
-                  { from: CMB, to: DXB, color: [0.8, 0.69, 0.35] },
-                  { from: DXB, to: EWR, color: [0.8, 0.69, 0.35] },
-                  { from: EWR, to: DCA, color: [0.8, 0.69, 0.35] },
-                  { from: PHL, to: YYZ, color: [0.4, 0.34, 0.17] },
-                  { from: YYZ, to: YYC, color: [0.4, 0.34, 0.17] },
-                  { from: YYC, to: EWR, color: [0.4, 0.34, 0.17] },
-                  { from: MDT, to: IAD, color: [0.4, 0.34, 0.17] },
-                  { from: IAD, to: SFO, color: [0.4, 0.34, 0.17] },
-                  { from: SFO, to: ORD, color: [0.4, 0.34, 0.17] },
-                  { from: ORD, to: MDT, color: [1.2, 1.03, 0.52] },
-                ],
-                arcColor: [1, 0.8588235294, 0.4392156863],
-                arcWidth: 0.4,
-                arcHeight: 0.35,
-              });
-              function tick() {
-                phi += velocityPhi;
-                theta += velocityTheta;
-                velocityPhi *= friction;
-                velocityTheta *= friction;
-                phi += 0.003;
-                if (isResetting) {
-                  const targetTheta = 0.3;
-                  const diff =
-                    ((targetTheta - theta + Math.PI) % (2 * Math.PI)) - Math.PI;
-                  theta += diff * 0.05;
-                  if (Math.abs(diff) < 0.001) {
-                    theta = targetTheta;
-                    isResetting = false;
-                  }
-                }
-                globe.update({ phi, theta });
-                rafId = requestAnimationFrame(tick);
-              }
-              rafId = requestAnimationFrame(tick);
-            }
-            canvas.addEventListener("mousedown", (e) => {
-              isDragging = true;
-              clearTimeout(resetTimer);
-              isResetting = false;
-              lastX = e.clientX;
-              lastY = e.clientY;
-            });
-            canvas.addEventListener("touchstart", (e) => {
-              isDragging = true;
-              clearTimeout(resetTimer);
-              isResetting = false;
-              lastX = e.touches[0].clientX;
-              lastY = e.touches[0].clientY;
-            });
-            window.addEventListener("mousemove", (e) => {
-              if (isDragging) {
-                const deltaX = e.clientX - lastX;
-                const deltaY = e.clientY - lastY;
-                velocityPhi = deltaX * 0.005;
-                velocityTheta = deltaY * 0.005;
-                phi += velocityPhi;
-                theta += velocityTheta;
-                lastX = e.clientX;
-                lastY = e.clientY;
-              }
-            });
-            window.addEventListener("touchmove", (e) => {
-              if (isDragging) {
-                const deltaX = e.touches[0].clientX - lastX;
-                const deltaY = e.touches[0].clientY - lastY;
-                velocityPhi = deltaX * 0.005;
-                velocityTheta = deltaY * 0.005;
-                phi += velocityPhi;
-                theta += velocityTheta;
-                lastX = e.touches[0].clientX;
-                lastY = e.touches[0].clientY;
-              }
-            });
-            function checkStop() {
-              const stopThreshold = 0.02;
-              if (
-                Math.abs(velocityPhi) < stopThreshold &&
-                Math.abs(velocityTheta) < stopThreshold
-              ) {
-                clearTimeout(resetTimer);
-                resetTimer = setTimeout(() => (isResetting = true), 4000);
-              } else {
-                requestAnimationFrame(checkStop);
-              }
-            }
-            window.addEventListener("mouseup", () => {
-              isDragging = false;
-              clearTimeout(resetTimer);
-              isResetting = false;
-              checkStop();
-            });
-            window.addEventListener("touchend", () => {
-              isDragging = false;
-              clearTimeout(resetTimer);
-              isResetting = false;
-              checkStop();
-            });
-            const CITY_IDS = [
-              "jaffna",
-              "lemoyne",
-              "fremont",
-              "princeton",
-              "boston",
-            ];
-
-            function getAnchorEl(id) {
-              const wrap = canvas.parentElement;
-              if (!wrap) return null;
-              for (const el of wrap.children) {
-                if (
-                  el !== canvas &&
-                  el.style?.cssText.includes(`anchor-name:--cobe-${id}`)
-                )
-                  return el;
-              }
-              return null;
-            }
-
-            function isCityVisible(id) {
-              return (
-                getComputedStyle(document.documentElement)
-                  .getPropertyValue(`--cobe-visible-${id}`)
-                  .trim() !== ""
-              );
-            }
-
-            canvas.addEventListener("mousemove", (e) => {
-              let nearAny = false;
-              for (const id of CITY_IDS) {
-                const label = document.querySelector(
-                  `.globe-label[data-city="${id}"]`,
-                );
-                if (!isCityVisible(id)) {
-                  label?.classList.remove("globe-label--hover");
-                  continue;
-                }
-                const anchor = getAnchorEl(id);
-                if (!anchor || !label) continue;
-                const ar = anchor.getBoundingClientRect();
-                const dist = Math.hypot(
-                  e.clientX - ar.left,
-                  e.clientY - ar.top,
-                );
-                if (dist < 20) {
-                  label.classList.add("globe-label--hover");
-                  nearAny = true;
-                } else {
-                  label.classList.remove("globe-label--hover");
-                }
-              }
-              canvas.style.cursor = nearAny ? "pointer" : "";
-            });
-
-            canvas.addEventListener("mouseleave", () => {
-              document
-                .querySelectorAll(".globe-label")
-                .forEach((l) => l.classList.remove("globe-label--hover"));
-              canvas.style.cursor = "";
-            });
-
-            canvas.addEventListener("click", (e) => {
-              for (const id of CITY_IDS) {
-                if (!isCityVisible(id)) continue;
-                const anchor = getAnchorEl(id);
-                if (!anchor) continue;
-                const ar = anchor.getBoundingClientRect();
-                if (Math.hypot(e.clientX - ar.left, e.clientY - ar.top) < 20) {
-                  const label = document.querySelector(
-                    `.globe-label[data-city="${id}"]`,
-                  );
-                  if (label) label.classList.toggle("active");
-                  break;
-                }
-              }
-            });
-
-            document
-              .querySelectorAll(".globe-label[data-city]")
-              .forEach((label) => {
-                label.addEventListener("click", () => {
-                  label.classList.toggle("active");
-                });
-                label.addEventListener("mousemove", (e) => {
-                  const rect = label.getBoundingClientRect();
-                  const x = e.clientX - rect.left;
-                  const y = e.clientY - rect.top;
-                  label.style.setProperty("--mouse-x", x + "px");
-                  label.style.setProperty("--mouse-y", y + "px");
-                });
-              });
-
-            let initialized = false;
-            let resizeTimeout;
-            window.addEventListener("resize", () => {
-              clearTimeout(resizeTimeout);
-              resizeTimeout = setTimeout(initGlobe, 200);
-            });
-            function tryInit(retries) {
-              const rect = canvas.getBoundingClientRect();
-              if (rect.width > 50) {
-                initialized = true;
-                initGlobe();
-              } else if (retries > 0) {
-                requestAnimationFrame(() => tryInit(retries - 1));
-              }
-            }
-            requestAnimationFrame(() => tryInit(120));
-          </script>
         </article>
 
         <!--
@@ -1515,6 +777,45 @@
                 </p>
               </li>
             </ol>
+          </section>
+        </article>
+
+        <!--
+        - #GAME
+      -->
+
+        <article class="game" data-page="game">
+          <section class="arrows-game" aria-label="Arrow game">
+            <div class="arrows-game__stage">
+              <button
+                class="arrows-game__button arrows-game__button--theme"
+                type="button"
+                data-game-theme-toggle
+                aria-label="Switch to dark mode"
+                title="Switch to dark mode"
+              >
+                <ion-icon name="moon-outline" aria-hidden="true"></ion-icon>
+              </button>
+              <button
+                class="arrows-game__button arrows-game__button--fullscreen"
+                type="button"
+                data-game-fullscreen
+                aria-label="Enter fullscreen"
+                title="Enter fullscreen"
+              >
+                <ion-icon name="expand-outline" aria-hidden="true"></ion-icon>
+              </button>
+              <canvas
+                id="arrows-game-canvas"
+                aria-label="Interactive arrow game canvas"
+              ></canvas>
+            </div>
+
+            <p class="arrows-game__credit">
+              Inspired by an old Flash browser game I played and loved as a
+              kid. I could not find the original up anymore, so this is my own
+              recreated version built from memory as a small tribute to it.
+            </p>
           </section>
         </article>
 
@@ -1683,8 +984,10 @@
     <!--
     - custom js link
   -->
-    <script src="./src/js/script.js" defer></script>
-
+    <script src="./src/js/script.js?v=20260523" defer></script>
+    <script src="./src/js/boids.js?v=20260523" defer></script>
+    <script src="./src/js/hero-canvas.js?v=20260523" defer></script>
+    <script type="module" src="./src/js/globe.mjs?v=20260523"></script>
     <!--
     - ionicon link
   -->

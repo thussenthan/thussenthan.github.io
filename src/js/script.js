@@ -130,15 +130,81 @@ function addShineEffect(selector) {
 
 addShineEffect(".service-item");
 addShineEffect(".icon-box");
+addShineEffect(".navbar-link");
+
+function syncSidebarHeight() {
+  const measuredSidebar = document.querySelector(".sidebar");
+  if (!measuredSidebar) return;
+
+  document.documentElement.style.setProperty(
+    "--sidebar-current-height",
+    `${Math.round(measuredSidebar.getBoundingClientRect().height)}px`,
+  );
+}
+
+syncSidebarHeight();
+window.addEventListener("resize", syncSidebarHeight);
 
 // page navigation variables
 const navigationLinks = document.querySelectorAll("[data-nav-link]");
 const pages = document.querySelectorAll("[data-page]");
+let gameScriptPromise = null;
+
+function loadGameScript() {
+  if (window.initArrowsGame) {
+    return Promise.resolve();
+  }
+
+  if (!gameScriptPromise) {
+    gameScriptPromise = new Promise((resolve, reject) => {
+      const existingScript = document.querySelector(
+        'script[data-arrows-game-script="true"]',
+      );
+
+      if (existingScript) {
+        existingScript.addEventListener("load", () => resolve(), {
+          once: true,
+        });
+        existingScript.addEventListener("error", () => reject(new Error("Failed to load game script")), {
+          once: true,
+        });
+        return;
+      }
+
+      const script = document.createElement("script");
+      script.src = "./src/js/arrows-game.js?v=20260523b";
+      script.defer = true;
+      script.dataset.arrowsGameScript = "true";
+      script.addEventListener(
+        "load",
+        () => resolve(),
+        { once: true },
+      );
+      script.addEventListener(
+        "error",
+        () => reject(new Error("Failed to load game script")),
+        { once: true },
+      );
+      document.head.appendChild(script);
+    }).catch((error) => {
+      gameScriptPromise = null;
+      throw error;
+    });
+  }
+
+  return gameScriptPromise;
+}
 
 // update nav click handler to trim text and use distinct index variable
 for (let i = 0; i < navigationLinks.length; i++) {
   navigationLinks[i].addEventListener("click", function () {
     const targetPage = this.textContent.trim().toLowerCase();
+    if (targetPage === "game") {
+      document.body.classList.add("game-active");
+    } else {
+      document.body.classList.remove("game-active");
+    }
+
     for (let j = 0; j < pages.length; j++) {
       if (targetPage === pages[j].dataset.page) {
         pages[j].classList.add("active");
@@ -149,5 +215,33 @@ for (let i = 0; i < navigationLinks.length; i++) {
         navigationLinks[j].classList.remove("active");
       }
     }
+
+    if (targetPage === "game") {
+      syncSidebarHeight();
+      loadGameScript()
+        .then(() => {
+          if (typeof window.initArrowsGame === "function") {
+            window.initArrowsGame();
+          }
+        })
+        .catch((error) => {
+          console.error(error);
+        });
+    }
+
+    document.dispatchEvent(
+      new CustomEvent("pagechange", {
+        detail: { page: targetPage },
+      }),
+    );
   });
+}
+
+const activePage = document.querySelector("[data-page].active");
+if (activePage) {
+  document.dispatchEvent(
+    new CustomEvent("pagechange", {
+      detail: { page: activePage.dataset.page },
+    }),
+  );
 }
